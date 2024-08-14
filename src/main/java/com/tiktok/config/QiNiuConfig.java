@@ -9,7 +9,7 @@ import com.qiniu.util.Auth;
 
 @Data
 @Component
-@ConfigurationProperties(prefix = "qiniu.kodo")
+
 public class QiNiuConfig {
     /**
      * 账号

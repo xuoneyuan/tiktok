@@ -4,11 +4,11 @@ import lombok.Data;
 
 @Data
 public class VideoStatistics {
-    private Integer allCount;
+    private long allCount;
 
-    private Integer successCount;
+    private long successCount;
 
-    private Integer processCount;
+    private long processCount;
 
-    private Integer passCount;
+    private long passCount;
 }

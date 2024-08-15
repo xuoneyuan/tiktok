@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.HashMap;
@@ -18,7 +19,7 @@ import java.util.HashMap;
 @RequestMapping("/tiktok/login")
 public class LoginController {
 
-    @Autowired
+    @Resource
     private LoginService loginService;
 
     /**

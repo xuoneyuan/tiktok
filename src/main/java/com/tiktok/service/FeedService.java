@@ -9,7 +9,7 @@ public interface FeedService {
      * @param userId 发件箱用户id
      * @param videoId 视频id
      */
-    void pusOutBoxFeed(Long userId,Long videoId,Long time);
+    void pushOutBoxFeed(Long userId,Long videoId,Long time);
 
     /**
      * 推入收件箱

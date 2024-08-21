@@ -44,6 +44,12 @@ public class QiNiuConfig {
 
     }
 
+    public String videoUploadToken() {
+        Auth auth = buildAuth();
+        return auth.uploadToken(bucketName, null, 300, new
+                StringMap().put("mimeLimit", "video/*").putNotEmpty("persistentOps", fops));
+    }
+
     public String imageUploadToken(){
         Auth auth = buildAuth();
         return auth.uploadToken(bucketName,null,300,new StringMap().put("mimeLimit","image/*"));

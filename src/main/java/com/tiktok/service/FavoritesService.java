@@ -41,7 +41,7 @@ public interface FavoritesService extends IService<Favorites> {
      * @param userId
      * @return
      */
-    Boolean favoritesState(Long videoId, Long userId);
+    boolean favoritesState(Long videoId, Long userId);
 
     void exist(Long userId, Long defaultFavoritesId);
 

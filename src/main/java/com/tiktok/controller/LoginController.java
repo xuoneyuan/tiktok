@@ -28,7 +28,7 @@ public class LoginController {
      * @return
      */
     @PostMapping
-    public R login(@RequestBody @Validated User user){
+    public R login (@RequestBody @Validated User user){
         user = loginService.login(user);
         //登陆成功，生成token
         String token = JwtUtils.getJwtToken(user.getId(),user.getNickName());

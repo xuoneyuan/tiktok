@@ -1,13 +1,18 @@
 package com.tiktok.service.impl;
 
 import cn.hutool.core.io.FileUtil;
-import cn.hutool.json.ObjectMapper;
+import cn.hutool.crypto.digest.otp.TOTP;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiktok.config.LocalCache;
 import com.tiktok.config.QiNiuConfig;
 import com.tiktok.constant.AuditStatus;
+import com.tiktok.constant.RedisConstant;
 import com.tiktok.entity.File;
 import com.tiktok.entity.task.VideoTask;
 import com.tiktok.entity.user.User;
@@ -18,13 +23,16 @@ import com.tiktok.entity.video.VideoShare;
 import com.tiktok.entity.video.VideoStar;
 import com.tiktok.entity.vo.BasePage;
 import com.tiktok.entity.vo.HotVideo;
+import com.tiktok.entity.vo.UserModel;
 import com.tiktok.entity.vo.UserVO;
 import com.tiktok.exception.BaseException;
 import com.tiktok.mapper.VideoMapper;
 import com.tiktok.service.*;
 import com.tiktok.util.RedisCacheUtil;
 import org.springframework.cglib.core.Local;
+import org.springframework.data.redis.connection.ReactiveListCommands;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.index.PathBasedRedisIndexDefinition;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
@@ -35,6 +43,8 @@ import ws.schild.jave.MultimediaObject;
 
 import javax.annotation.Resource;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collector;
@@ -60,6 +70,8 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
     @Resource
     private FavoritesService favoritesService;
     @Resource
+    private VideoPublishAuditServiceImpl videoPublishAuditService;
+    @Resource
     private VideoMapper videoMapper;
     @Resource
     private RedisTemplate redisTemplate;
@@ -69,6 +81,9 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
     private FeedService feedService;
     @Resource
     private FileService fileService;
+
+
+    ObjectMapper objectMapper = new ObjectMapper();
 
 
     @Override
@@ -209,101 +224,334 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
 
     @Override
     public Collection<Video> getVideoByTypeId(Long typeId) {
-        return null;
+        if(typeId==null)return Collections.EMPTY_LIST;
+        Type type = typeService.getById(typeId);
+        if(type==null)return Collections.EMPTY_LIST;
+        Collection<Long> videoIdByTypeId = interestPushService.listVideoIdByTypeId(typeId);
+        if(ObjectUtils.isEmpty(videoIdByTypeId)){
+            return Collections.EMPTY_LIST;
+        }
+        List<Video> videos = listByIds(videoIdByTypeId);
+        setUserVoAndUrl(videos);
+        return videos;
     }
 
     @Override
     public IPage<Video> searchVideo(String search, BasePage basePage, Long userId) {
-        return null;
+        IPage page = basePage.page();
+        LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Video::getAuditStatus,AuditStatus.SUCCESS);
+        if(search.contains("YV")){
+            wrapper.eq(Video::getYv,search);
+        }else{
+            wrapper.like(!ObjectUtils.isEmpty(search),Video::getTitle,search);
+        }
+        IPage<Video> page1 = this.page(page,wrapper);
+        List<Video> records = page1.getRecords();
+        setUserVoAndUrl(records);
+        userService.addSearchHistory(userId,search);
+        return page1;
     }
 
     @Override
     public void auditProcess(Video video) {
 
+        updateById(video);
+        interestPushService.pushSystemStockIn(video);
+        interestPushService.pushSystemTypeStockIn(video);
+        feedService.pushInBoxFeed(video.getUserId(),video.getId(),video.getGmtCreated().getTime());
+
     }
 
     @Override
     public boolean startVideo(Long videoId) {
-        return false;
+        Video video = getById(videoId);
+        if(video==null)throw new BaseException("视频不存在");
+        VideoStar videoStar = new VideoStar();
+        videoStar.setVideoId(videoId);
+        videoStar.setUserId(UserHolder.get());
+        boolean starVideo = videoStarService.starVideo(videoStar);
+        updateStar(video,starVideo?1L:-1L);
+        List<String> label = video.buildLabel();
+        UserModel userModel = UserModel.buildUserModel(label, videoId, 1.0);
+        interestPushService.updateUserModel(userModel);
+        return starVideo;
+    }
+
+    private void updateStar(Video video,Long value) {
+        UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
+        videoUpdateWrapper.setSql("star_count=star_count+"+value);
+        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getStartCount, video.getStartCount());
+        update(video,videoUpdateWrapper);
     }
 
     @Override
     public boolean shareVideo(VideoShare videoShare) {
-        return false;
+        Video video = getById(videoShare.getVideoId());
+        if(video==null)throw new BaseException("视频不存在");
+        boolean share = videoShareService.share(videoShare);
+        updateShare(video,share?1L:0L);
+        return share;
+    }
+    private void updateShare(Video video,Long value) {
+        UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
+        videoUpdateWrapper.setSql("share_count=share_count+"+value);
+        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getShareCount, video.getShareCount());
+        update(video,videoUpdateWrapper);
     }
 
     @Override
     public void historyVideo(Long videoId, Long userId) throws Exception {
+        String key = RedisConstant.HISTORY_VIDEO + videoId + ":" + userId;
+        Object o = redisCacheUtil.get(key);
+        if(o==null){
+            redisCacheUtil.set(key,videoId,RedisConstant.HISTORY_TIME);
+            Video video = getById(videoId);
+            video.setUser(userService.getInfo(video.getUserId()));
+            video.setTypeName(typeService.getById(video.getTypeId()).getName());
+            redisCacheUtil.zadd(RedisConstant.USER_HISTORY_VIDEO+userId,new Date().getTime(),video,RedisConstant.HISTORY_TIME);
+            updateHistory(video,1L);
 
+        }
+
+    }
+    private void updateHistory(Video video,Long value) {
+        UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
+        videoUpdateWrapper.setSql("history_count=history_count+"+value);
+        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getHistoryCount, video.getHistoryCount());
+        update(video,videoUpdateWrapper);
     }
 
     @Override
     public boolean favoritesVideo(Long fId, Long vId) {
-        return false;
+        Video video = getById(vId);
+        if(video==null) throw new BaseException("视频不存在");
+        boolean favorites = favoritesService.favorites(fId, vId);
+        updateFavorites(video,favorites?1L:-1L);
+        List<String> label = video.buildLabel();
+        UserModel userModel = UserModel.buildUserModel(label, vId, 2.0);
+        interestPushService.updateUserModel(userModel);
+        return favorites;
+    }
+    private void updateFavorites(Video video,Long value) {
+        UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
+        videoUpdateWrapper.setSql("favorites_count=favorites_count+"+value);
+        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getFavoritesCount, video.getFavoritesCount());
+        update(video,videoUpdateWrapper);
     }
 
     @Override
     public LinkedHashMap<String, List<Video>> getHistory(BasePage basePage) {
-        return null;
+        Long userId = UserHolder.get();
+        String key = RedisConstant.USER_HISTORY_VIDEO + userId;
+        Set<ZSetOperations.TypedTuple<Object>> typedTuples = redisCacheUtil.zSetGetByPage(key, basePage.getPage(), basePage.getLimit());
+        if(ObjectUtils.isEmpty(typedTuples)){
+            return new LinkedHashMap<>();
+        }
+        ArrayList<Video> videos = new ArrayList<>();
+        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+        LinkedHashMap<String, List<Video>> result = new LinkedHashMap<>();
+        for (ZSetOperations.TypedTuple<Object> typedTuple : typedTuples) {
+            Date date = new Date(typedTuple.getScore().longValue());
+            String format = simpleDateFormat.format(date);
+            if(!result.containsKey(format)){
+                result.put(format,new ArrayList<>());
+            }
+            Video video = (Video) typedTuple.getValue();
+            result.get(format).add(video);
+            videos.add(video);
+        }
+        setUserVoAndUrl(videos);
+
+        return result;
     }
 
     @Override
     public Collection<Video> listVideoByFavorites(Long favoritesId) {
-        return null;
+        Long userId = UserHolder.get();
+        List<Long> videoIds = favoritesService.listVideoIds(favoritesId, userId);
+        if(ObjectUtils.isEmpty(videoIds)){
+            return Collections.EMPTY_LIST;
+        }
+        List<Video> videos = listByIds(videoIds);
+        setUserVoAndUrl(videos);
+        return videos;
     }
 
     @Override
     public Collection<HotVideo> hotRank() {
-        return null;
+
+        Set<ZSetOperations.TypedTuple<Object>> scores = redisTemplate.opsForZSet().reverseRangeWithScores(RedisConstant.HOT_RANK, 0, -1);
+        ArrayList<HotVideo> hotVideos = new ArrayList<>();
+        for (ZSetOperations.TypedTuple<Object> score : scores) {
+            HotVideo hotVideo;
+            try{
+                hotVideo = objectMapper.readValue(score.getValue().toString(),HotVideo.class);
+                hotVideo.setHot((double) score.getScore().intValue());
+                hotVideo.hotFormat();
+                hotVideos.add(hotVideo);
+            }catch (JsonProcessingException e){
+                e.printStackTrace();
+            }
+        }
+
+        return hotVideos;
     }
 
     @Override
     public Collection<Video> listSimilarVideo(Video video) {
-        return null;
+        if (ObjectUtils.isEmpty(video) || ObjectUtils.isEmpty(video.getLabelNames())) return Collections.EMPTY_LIST;
+        List<String> labels = video.buildLabel();
+        ArrayList<String> labelNames = new ArrayList<>();
+        labelNames.addAll(labels);
+        labelNames.addAll(labels);
+        Set<Long> videoIds = (Set<Long>) interestPushService.listVideoIdByLabels(labelNames);
+        videoIds.remove(video.getId());
+
+        // 初始化视频列表
+        List<Video> videos = new ArrayList<>();
+
+        if (!ObjectUtils.isEmpty(videoIds)) {
+            videos = listByIds(videoIds);
+            setUserVoAndUrl(videos);
+        }
+
+        return videos;
     }
 
     @Override
     public IPage<Video> listByUserIdOpenVideo(Long userId, BasePage basePage) {
-        return null;
+        if(userId==null){
+            return new Page<>();
+        }
+        IPage page = page(basePage.page(), new LambdaQueryWrapper<Video>()
+                .eq(Video::getUserId, userId)
+                .eq(Video::getAuditStatus, AuditStatus.SUCCESS)
+                .orderByDesc(Video::getGmtCreated));
+
+        List<Video> records = page.getRecords();
+        setUserVoAndUrl(records);
+        return page;
     }
 
     @Override
     public String getAuditQueueState() {
-        return null;
+        return videoPublishAuditService.getAuditQueueState()?"quick":"slow";
     }
 
     @Override
     public List<Video> selectNDaysAgeVideo(long id, int days, int limit) {
-        return null;
+        return videoMapper.selectNDaysAgeVideo(id,days,limit);
     }
 
     @Override
     public Collection<Video> listHotVideo() {
-        return null;
+        Calendar instance = Calendar.getInstance();
+        int today = instance.get(Calendar.DATE);
+        HashMap<String, Integer> map = new HashMap<>();
+        map.put(RedisConstant.HOT_VIDEO + today,10);
+        map.put(RedisConstant.HOT_VIDEO + (today-1),3);
+        map.put(RedisConstant.HOT_VIDEO + (today-2),2);
+        List<Long> hotVideoIds = redisCacheUtil.pipeline(connection -> {
+           map.forEach((k,v)->{
+               connection.sRandMember(k.getBytes(),v);
+           });
+            return null;
+        });
+
+        if(ObjectUtils.isEmpty(hotVideoIds))return Collections.EMPTY_LIST;
+        ArrayList<Long> videoIds = new ArrayList<>();
+        for (Long hotVideoId : hotVideoIds) {
+            if(!ObjectUtils.isEmpty(hotVideoId)){
+                videoIds.addAll(hotVideoIds);
+            }
+        }
+        List<Video> videos = listByIds(videoIds);
+        setUserVoAndUrl(videos);
+        return videos;
+
     }
 
     @Override
     public Collection<Video> followFeed(Long userId, Long lastTime) {
-        return null;
+        Set<ZSetOperations.TypedTuple<Long>> set = redisTemplate.opsForZSet()
+                .reverseRangeByScoreWithScores(
+                        RedisConstant.IN_FOLLOW + userId,        // 键名
+                        lastTime == null ? 0 : lastTime,         // 分数范围下限
+                        lastTime == null ? new Date().getTime() : lastTime,  // 分数范围上限
+                        0,                                      // 起始偏移量 (offset)
+                        5                                       // 返回的最大元素个数 (count)
+                );
+
+        if(ObjectUtils.isEmpty(set))return Collections.EMPTY_LIST;
+
+        Collection<Video> videos = list(new LambdaQueryWrapper<Video>().in(Video::getId, set)).stream()
+                .sorted(Comparator.comparing(Video::getGmtCreated).reversed())
+                .collect(Collectors.toList());
+
+        setUserVoAndUrl(videos);
+
+        return videos;
     }
 
     @Override
     public void initFollowFeed(Long userId) {
 
+        Collection<Long> follow = followService.getFollow(userId, null);
+        feedService.initFollowFeed(userId,follow);
     }
 
     @Override
     public IPage<Video> listByUserIdVideo(BasePage basePage, Long userId) {
-        return null;
+        IPage page = page(basePage.page(), new LambdaQueryWrapper<Video>()
+                .eq(Video::getUserId, userId).orderByDesc(Video::getGmtCreated));
+
+
+        return page;
     }
 
     @Override
     public Collection<Long> listVideoIdByUserId(Long userId) {
-        return null;
+        List<Long> ids = list(new LambdaQueryWrapper<Video>().eq(Video::getUserId,userId)
+                .eq(Video::getOpen,0)
+                .select(Video::getId)).stream().map(Video::getId).collect(Collectors.toList());
+        return ids;
     }
 
     @Override
     public void violations(Long id) {
+
+        Video video = getById(id);
+        Type type = typeService.getById(video.getTypeId());
+        video.setLabelNames(type.getLabelNames());
+        // 修改视频信息
+        video.setOpen(true);
+        video.setMsg("该视频已下架");
+        video.setAuditStatus(AuditStatus.PASS);
+        // 删除分类中的视频
+        interestPushService.deleteSystemTypeStockIn(video);
+        // 删除标签中的视频
+        interestPushService.deleteSystemStockIn(video);
+        // 获取视频发布者id,删除对应的发件箱
+        Long userId = video.getUserId();
+        redisTemplate.opsForZSet().remove(RedisConstant.OUT_FOLLOW + userId, id);
+
+        // 获取视频发布者粉丝，删除对应的收件箱
+        Collection<Long> fansIds = followService.getFans(userId, null);
+        feedService.deleteInBoxFeed(userId, Collections.singletonList(id));
+        feedService.deleteOutBoxFeed(userId, fansIds, id);
+
+        // 热门视频以及热度排行榜视频
+        Calendar calendar = Calendar.getInstance();
+        int today = calendar.get(Calendar.DATE);
+        Long videoId = video.getId();
+        // 尝试去找到删除
+        redisTemplate.opsForSet().remove(RedisConstant.HOT_VIDEO + today, videoId);
+        redisTemplate.opsForSet().remove(RedisConstant.HOT_VIDEO + (today - 1), videoId);
+        redisTemplate.opsForSet().remove(RedisConstant.HOT_VIDEO + (today - 2), videoId);
+        redisTemplate.opsForZSet().remove(RedisConstant.HOT_RANK, videoId);
+        // 修改视频
+        updateById(video);
 
     }
 

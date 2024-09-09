@@ -137,6 +137,7 @@ public class VideoPublishAuditServiceImpl implements AuditService<VideoTask,Vide
     public boolean getAuditQueueState(){
         return executor.getTaskCount() < maxPoolSize;
     }
+
     @Override
     public void afterPropertiesSet() throws Exception {
         executor  = new ThreadPoolExecutor(5, maxPoolSize, 60, TimeUnit.SECONDS, new ArrayBlockingQueue(1000));

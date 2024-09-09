@@ -62,8 +62,7 @@ public class HotRank {
                 Long startCount = video.getStartCount();
                 Double favoritesCount = video.getFavoritesCount() * 1.5;
                 Date date = new Date();
-                long t =date.getTime() - video.getGmtCreated().getTime();
-                double v = ThreadLocalRandom.current().nextDouble(0.1, 1.0);
+                long t = date.getTime() - video.getGmtCreated().getTime();
                 double a = 0.011;
                 double hot = (shareCount + historyCount + startCount + favoritesCount) * Math.exp(-a * TimeUnit.MILLISECONDS.toDays(t));
 
@@ -72,7 +71,9 @@ public class HotRank {
 
             }
             id = videos.get(videos.size()-1).getId();
-            videos = videoService.list(new LambdaQueryWrapper<Video>().gt(Video::getId,id).last("limit"+limit));
+            videos = videoService.list(new LambdaQueryWrapper<Video>()
+                    .gt(Video::getId,id)
+                    .last("limit"+limit));
 
         }
 
@@ -114,7 +115,7 @@ public class HotRank {
                 Long startCount = video.getStartCount();
                 Double favoritesCount = video.getFavoritesCount() * 1.5;
                 Date date = new Date();
-                long t =date.getTime() - video.getGmtCreated().getTime();
+                long t = date.getTime() - video.getGmtCreated().getTime();
                 double a = 0.011;
                 double hot = (shareCount + historyCount + startCount + favoritesCount) * Math.exp(-a * TimeUnit.MILLISECONDS.toDays(t));
                 if(hot>hotLimit){

@@ -81,18 +81,16 @@ public class InterestPushServiceImpl implements InterestPushService {
             BoundSetOperations<String, Object> boundSetOps = redisTemplate.boundSetOps(key);
             boundSetOps.remove(id.toString());
         }
-
     }
 
     @Override
     public void initUserModel(Long userId, List<String> labels) {
 
-
         String key = RedisConstant.USER_MODEL + userId;
         HashMap<Object, Object> map = new HashMap<>();
         if(!ObjectUtils.isEmpty(labels)){
             int size = labels.size();
-            double  proValue = 100 / size;
+            double proValue = 100 / size;
             for (String label : labels) {
                 map.put(label,proValue);
             }
@@ -107,7 +105,7 @@ public class InterestPushServiceImpl implements InterestPushService {
         Long userId = userModel.getUserId();
         if(userId!=null){
             List<Model> models = userModel.getModels();
-            String key = RedisConstant.USER_MODEL+userId;
+            String key = RedisConstant.USER_MODEL + userId;
             Map<Object, Object> modelMap = redisCacheUtil.hmget(key);
             if(modelMap==null){
                 modelMap = new HashMap<>();
@@ -117,7 +115,7 @@ public class InterestPushServiceImpl implements InterestPushService {
 
                     modelMap.put(model.getLabel(), Double.parseDouble(modelMap.get(model.getLabel()).toString()) + model.getScore());
                     Object o = modelMap.get(model.getLabel());
-                    if(o==null||Double.parseDouble(o.toString())>0.0){
+                    if(o==null || Double.parseDouble(o.toString()) > 0.0){
                         modelMap.remove(o);
                     }
                 }else {
@@ -163,7 +161,11 @@ public class InterestPushServiceImpl implements InterestPushService {
                     return null;
                 });
                 // 获取到的videoIds
-                Set<Long> ids = list.stream().filter(id->id!=null).map(id->Long.parseLong(id.toString())).collect(Collectors.toSet());
+                Set<Long> ids = list.stream()
+                        .filter(id->id!=null)
+                        .map(id->Long.parseLong(id.toString()))
+                        .collect(Collectors.toSet());
+
                 String key2 = RedisConstant.HISTORY_VIDEO;
 
                 // 去重
@@ -173,7 +175,9 @@ public class InterestPushServiceImpl implements InterestPushService {
                     }
                     return null;
                 });
-                simpIds = (List) simpIds.stream().filter(o->!ObjectUtils.isEmpty(o)).collect(Collectors.toList());;
+                simpIds = (List) simpIds.stream()
+                        .filter(o->!ObjectUtils.isEmpty(o))
+                        .collect(Collectors.toList());
                 if (!ObjectUtils.isEmpty(simpIds)){
                     for (Object simpId : simpIds) {
                         Long l = Long.valueOf(simpId.toString());
@@ -192,7 +196,6 @@ public class InterestPushServiceImpl implements InterestPushService {
                     videoIds.add(randomVideo);
                 }
 
-
                 return videoIds;
             }
         }
@@ -210,7 +213,10 @@ public class InterestPushServiceImpl implements InterestPushService {
         // 获取videoId
         List<Object> list = redisCacheUtil.sRandom(labelNames);
         if (!ObjectUtils.isEmpty(list)){
-            videoIds = list.stream().filter(id ->!ObjectUtils.isEmpty(id)).map(id -> Long.valueOf(id.toString())).collect(Collectors.toSet());
+            videoIds = list.stream()
+                    .filter(id ->!ObjectUtils.isEmpty(id))
+                    .map(id -> Long.valueOf(id.toString()))
+                    .collect(Collectors.toSet());
         }
 
         return videoIds;
@@ -220,12 +226,15 @@ public class InterestPushServiceImpl implements InterestPushService {
     public Collection<Long> listVideoIdByLabels(List<String> labelNames) {
         ArrayList<String> labelKeys = new ArrayList<>();
         for (String labelName : labelNames) {
-            labelKeys.add(RedisConstant.SYSTEM_STOCK+labelName);
+            labelKeys.add(RedisConstant.SYSTEM_STOCK + labelName);
         }
         Set<Long> videoIds = new HashSet<>();
         List<Object> list = redisCacheUtil.sRandom(labelKeys);
         if(!ObjectUtils.isEmpty(list)){
-            videoIds = list.stream().filter(id->!ObjectUtils.isEmpty(id)).map(id->Long.valueOf(id.toString())).collect(Collectors.toSet());
+            videoIds = list.stream()
+                    .filter(id->!ObjectUtils.isEmpty(id))
+                    .map(id->Long.valueOf(id.toString()))
+                    .collect(Collectors.toSet());
         }
         return videoIds;
     }

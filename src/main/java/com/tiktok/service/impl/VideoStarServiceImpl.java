@@ -20,21 +20,33 @@ public class VideoStarServiceImpl extends ServiceImpl<VideoStarMapper,VideoStar>
         }
         catch (Exception e){
 
-            this.remove(new LambdaQueryWrapper<VideoStar>().eq(VideoStar::getVideoId,videoStar.getVideoId()).eq(VideoStar::getUserId,videoStar.getUserId()));
+            this.remove(new LambdaQueryWrapper<VideoStar>()
+                    .eq(VideoStar::getVideoId,videoStar.getVideoId())
+                    .eq(VideoStar::getUserId,videoStar.getUserId()));
+
             return false;
         }
+
         return true;
     }
 
     @Override
     public List<Long> getStarUserIds(Long videoId) {
-        return this.list(new LambdaQueryWrapper<VideoStar>().eq(VideoStar::getVideoId,videoId)).stream().map(VideoStar::getUserId).collect(Collectors.toList());
+        return this.list(new LambdaQueryWrapper<VideoStar>()
+                        .eq(VideoStar::getVideoId,videoId))
+                .stream()
+                .map(VideoStar::getUserId)
+                .collect(Collectors.toList());
     }
 
     @Override
     public Boolean starState(Long videoId, Long userId) {
-        if(userId==null)return false;
-        return this.count(new LambdaQueryWrapper<VideoStar>().eq(VideoStar::getVideoId,videoId).eq(VideoStar::getUserId,userId))==1;
+        if(userId==null){
+            return false;
+        }
+        return this.count(new LambdaQueryWrapper<VideoStar>()
+                .eq(VideoStar::getVideoId,videoId)
+                .eq(VideoStar::getUserId,userId))==1;
 
     }
 }

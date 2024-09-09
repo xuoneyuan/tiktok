@@ -6,6 +6,7 @@ import com.tiktok.entity.video.Video;
 import com.tiktok.entity.video.VideoShare;
 import com.tiktok.entity.vo.BasePage;
 import com.tiktok.entity.vo.HotVideo;
+import com.tiktok.entity.vo.VideoVO;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -175,4 +176,5 @@ public interface VideoService extends IService<Video> {
      * @param id
      */
     void violations(Long id);
+
 }

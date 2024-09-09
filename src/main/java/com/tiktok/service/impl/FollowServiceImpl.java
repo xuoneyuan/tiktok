@@ -74,7 +74,6 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow> impleme
                 return Collections.EMPTY_SET;
             }
             return set.stream().map(o->Long.valueOf(o.toString())).collect(Collectors.toList());
-
         }
         Set<ZSetOperations.TypedTuple<Object>> typedTuples = redisCacheUtil.zSetGetByPage(RedisConstant.USER_FANS+userId,basePage.getPage(),basePage.getLimit());
         if(ObjectUtils.isEmpty(typedTuples)){
@@ -100,8 +99,8 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow> impleme
         try{
             save(follow);
             Date date = new Date();
-            redisTemplate.opsForZSet().add(RedisConstant.USER_FOLLOW+userId,followsId,date.getTime());
-            redisTemplate.opsForZSet().add(RedisConstant.USER_FANS+followsId,userId,date.getTime());
+            redisTemplate.opsForZSet().add(RedisConstant.USER_FOLLOW + userId,followsId,date.getTime());
+            redisTemplate.opsForZSet().add(RedisConstant.USER_FANS + followsId,userId,date.getTime());
         }catch (Exception e){
             remove(new LambdaQueryWrapper<Follow>().eq(Follow::getFollowId, followsId).eq(Follow::getUserId, userId));
 
@@ -119,7 +118,9 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow> impleme
 
     @Override
     public Boolean isFollows(Long followId, Long userId){
-        if(userId==null||followId==null)return false;
+        if(userId==null||followId==null){
+            return false;
+        }
 
         return count(new LambdaQueryWrapper<Follow>().eq(Follow::getFollowId,followId).eq(Follow::getUserId,userId))==1;
 

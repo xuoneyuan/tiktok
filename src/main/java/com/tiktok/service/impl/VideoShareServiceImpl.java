@@ -24,6 +24,10 @@ public class VideoShareServiceImpl extends ServiceImpl<VideoShareMapper, VideoSh
 
     @Override
     public List<Long> getShareUserId(Long videoId) {
-        return this.list(new LambdaQueryWrapper<VideoShare>().eq(VideoShare::getVideoId,videoId)).stream().map(VideoShare::getUserId).collect(Collectors.toList());
+        return this.list(new LambdaQueryWrapper<VideoShare>()
+                .eq(VideoShare::getVideoId,videoId))
+                .stream()
+                .map(VideoShare::getUserId)
+                .collect(Collectors.toList());
     }
 }

@@ -35,14 +35,12 @@ public class FileController implements InitializingBean {
      */
     @PostMapping
     public R save(String fileKey){
-
         return R.ok().data(fileService.save(fileKey, UserHolder.get()));
     }
 
+
     @GetMapping("/getToken")
     public R token(String type){
-
-
         return R.ok().data(qiNiuConfig.uploadToken(type));
     }
 

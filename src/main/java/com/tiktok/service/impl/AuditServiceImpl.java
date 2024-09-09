@@ -53,12 +53,11 @@ public abstract class AuditServiceImpl<T,R> implements AuditService<T, R> {
     private AuditResponse getInfo(List<CutsJson>types,Double minPolitician,String key){
         AuditResponse auditResponse = new AuditResponse();
         auditResponse.setFlag(false);
-        String info = null;
         for (CutsJson type : types) {
             for (DetailsJson detail : type.getDetails()) {
                 if(detail.getScore()>minPolitician){
                     if(!detail.getLabel().equals(key)){
-                        info = AuditMsgMap.getInfo(detail.getLabel());
+                        String info = AuditMsgMap.getInfo(detail.getLabel());
                         auditResponse.setMsg(info);
                         auditResponse.setOffset(type.getOffset());
 
@@ -140,7 +139,7 @@ public abstract class AuditServiceImpl<T,R> implements AuditService<T, R> {
     protected String appendUUID(String url){
         Setting setting = settingService.list().get(0);
         if (setting.getAuth()) {
-            final String uuid = UUID.randomUUID().toString();
+            String uuid = UUID.randomUUID().toString();
             LocalCache.put(uuid,true);
             if (url.contains("?")){
                 url = url+"&uuid="+uuid;

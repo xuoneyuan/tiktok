@@ -111,7 +111,9 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
         Long videoId = video.getId();
         Video oldVideo = null;
         if(videoId!=null){
-            oldVideo = this.getOne(new LambdaQueryWrapper<Video>().eq(Video::getId,videoId).eq(Video::getUserId,userId));
+            oldVideo = this.getOne(new LambdaQueryWrapper<Video>()
+                    .eq(Video::getId,videoId)
+                    .eq(Video::getUserId,userId));
             if(!(video.buildVideoUrl()).equals(oldVideo.buildVideoUrl())||
             !video.buildCoverUrl().equals(oldVideo.buildCoverUrl())){
                 throw new BaseException("不能更换视频源");
@@ -183,8 +185,6 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
         videoTask.setIsAdd(isAdd);
         videoTask.setOldState(isAdd?true:video.getOpen());
         videoTask.setNewState(true);
-
-
     }
 
     @Override
@@ -195,15 +195,17 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
         if(video==null){
             throw new BaseException("不存在");
         }
-        boolean b = removeById(id);
-        if(b){
+        boolean success = removeById(id);
+        if(success){
             new Thread(()->{
-                videoShareService.remove(new LambdaQueryWrapper<VideoShare>().eq(VideoShare::getUserId,userId).eq(VideoShare::getVideoId,id));
-                videoStarService.remove(new LambdaQueryWrapper<VideoStar>().eq(VideoStar::getUserId,userId).eq(VideoStar::getVideoId,id));
+                videoShareService.remove(new LambdaQueryWrapper<VideoShare>()
+                        .eq(VideoShare::getUserId,userId)
+                        .eq(VideoShare::getVideoId,id));
+                videoStarService.remove(new LambdaQueryWrapper<VideoStar>()
+                        .eq(VideoStar::getUserId,userId)
+                        .eq(VideoStar::getVideoId,id));
                 interestPushService.deleteSystemStockIn(video);
                 interestPushService.deleteSystemTypeStockIn(video);
-
-
             }).start();
         }
     }
@@ -212,21 +214,33 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
     public Collection<Video> pushVideos(Long userId) {
         User user = userService.getById(userId);
         Collection<Long> videoIds = interestPushService.listVideoIdByUserModel(user);
-        ArrayList<Video> videos = new ArrayList<>();
+
         if(ObjectUtils.isEmpty(videoIds)){
-            videoIds = list(new LambdaQueryWrapper<Video>().orderByDesc(Video::getGmtCreated)).stream().map(Video::getId).collect(Collectors.toList());
-            videoIds = new HashSet<>(videoIds).stream().limit(10).collect(Collectors.toList());
+            videoIds = list(new LambdaQueryWrapper<Video>()
+                    .orderByDesc(Video::getGmtCreated))
+                    .stream()
+                    .map(Video::getId)
+                    .collect(Collectors.toList());
+            videoIds = new HashSet<>(videoIds)
+                    .stream()
+                    .limit(10)
+                    .collect(Collectors.toList());
         }
-        videos = new ArrayList<>(listByIds(videoIds));
+
+        List<Video>videos = new ArrayList<>(listByIds(videoIds));
         setUserVoAndUrl(videos);
         return videos;
     }
 
     @Override
     public Collection<Video> getVideoByTypeId(Long typeId) {
-        if(typeId==null)return Collections.EMPTY_LIST;
+        if(typeId==null){
+            return Collections.EMPTY_LIST;
+        }
         Type type = typeService.getById(typeId);
-        if(type==null)return Collections.EMPTY_LIST;
+        if(type==null){
+            return Collections.EMPTY_LIST;
+        }
         Collection<Long> videoIdByTypeId = interestPushService.listVideoIdByTypeId(typeId);
         if(ObjectUtils.isEmpty(videoIdByTypeId)){
             return Collections.EMPTY_LIST;
@@ -266,7 +280,9 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
     @Override
     public boolean startVideo(Long videoId) {
         Video video = getById(videoId);
-        if(video==null)throw new BaseException("视频不存在");
+        if(video==null){
+            throw new BaseException("视频不存在");
+        }
         VideoStar videoStar = new VideoStar();
         videoStar.setVideoId(videoId);
         videoStar.setUserId(UserHolder.get());
@@ -281,27 +297,34 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
     private void updateStar(Video video,Long value) {
         UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
         videoUpdateWrapper.setSql("star_count=star_count+"+value);
-        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getStartCount, video.getStartCount());
+        videoUpdateWrapper.lambda()
+                .eq(Video::getId, video.getId())
+                .eq(Video::getStartCount, video.getStartCount());
         update(video,videoUpdateWrapper);
     }
 
     @Override
     public boolean shareVideo(VideoShare videoShare) {
         Video video = getById(videoShare.getVideoId());
-        if(video==null)throw new BaseException("视频不存在");
+        if(video==null){
+            throw new BaseException("视频不存在");
+        }
         boolean share = videoShareService.share(videoShare);
         updateShare(video,share?1L:0L);
         return share;
     }
+
     private void updateShare(Video video,Long value) {
         UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
         videoUpdateWrapper.setSql("share_count=share_count+"+value);
-        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getShareCount, video.getShareCount());
+        videoUpdateWrapper.lambda()
+                .eq(Video::getId, video.getId())
+                .eq(Video::getShareCount, video.getShareCount());
         update(video,videoUpdateWrapper);
     }
 
     @Override
-    public void historyVideo(Long videoId, Long userId) throws Exception {
+    public void historyVideo(Long videoId, Long userId)  {
         String key = RedisConstant.HISTORY_VIDEO + videoId + ":" + userId;
         Object o = redisCacheUtil.get(key);
         if(o==null){
@@ -309,16 +332,17 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
             Video video = getById(videoId);
             video.setUser(userService.getInfo(video.getUserId()));
             video.setTypeName(typeService.getById(video.getTypeId()).getName());
-            redisCacheUtil.zadd(RedisConstant.USER_HISTORY_VIDEO+userId,new Date().getTime(),video,RedisConstant.HISTORY_TIME);
+            redisCacheUtil.zadd(RedisConstant.USER_HISTORY_VIDEO + userId,new Date().getTime(),video,RedisConstant.HISTORY_TIME);
             updateHistory(video,1L);
-
         }
-
     }
+
     private void updateHistory(Video video,Long value) {
         UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
         videoUpdateWrapper.setSql("history_count=history_count+"+value);
-        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getHistoryCount, video.getHistoryCount());
+        videoUpdateWrapper.lambda()
+                .eq(Video::getId, video.getId())
+                .eq(Video::getHistoryCount, video.getHistoryCount());
         update(video,videoUpdateWrapper);
     }
 
@@ -333,10 +357,13 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
         interestPushService.updateUserModel(userModel);
         return favorites;
     }
+
     private void updateFavorites(Video video,Long value) {
         UpdateWrapper<Video> videoUpdateWrapper = new UpdateWrapper<>();
         videoUpdateWrapper.setSql("favorites_count=favorites_count+"+value);
-        videoUpdateWrapper.lambda().eq(Video::getId, video.getId()).eq(Video::getFavoritesCount, video.getFavoritesCount());
+        videoUpdateWrapper.lambda()
+                .eq(Video::getId, video.getId())
+                .eq(Video::getFavoritesCount, video.getFavoritesCount());
         update(video,videoUpdateWrapper);
     }
 
@@ -394,7 +421,6 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
                 e.printStackTrace();
             }
         }
-
         return hotVideos;
     }
 
@@ -459,7 +485,9 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
             return null;
         });
 
-        if(ObjectUtils.isEmpty(hotVideoIds))return Collections.EMPTY_LIST;
+        if(ObjectUtils.isEmpty(hotVideoIds)){
+            return Collections.EMPTY_LIST;
+        }
         ArrayList<Long> videoIds = new ArrayList<>();
         for (Long hotVideoId : hotVideoIds) {
             if(!ObjectUtils.isEmpty(hotVideoId)){
@@ -504,9 +532,8 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
     @Override
     public IPage<Video> listByUserIdVideo(BasePage basePage, Long userId) {
         IPage page = page(basePage.page(), new LambdaQueryWrapper<Video>()
-                .eq(Video::getUserId, userId).orderByDesc(Video::getGmtCreated));
-
-
+                .eq(Video::getUserId, userId)
+                .orderByDesc(Video::getGmtCreated));
         return page;
     }
 
@@ -514,13 +541,15 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
     public Collection<Long> listVideoIdByUserId(Long userId) {
         List<Long> ids = list(new LambdaQueryWrapper<Video>().eq(Video::getUserId,userId)
                 .eq(Video::getOpen,0)
-                .select(Video::getId)).stream().map(Video::getId).collect(Collectors.toList());
+                .select(Video::getId))
+                .stream()
+                .map(Video::getId)
+                .collect(Collectors.toList());
         return ids;
     }
 
     @Override
     public void violations(Long id) {
-
         Video video = getById(id);
         Type type = typeService.getById(video.getTypeId());
         video.setLabelNames(type.getLabelNames());
@@ -564,7 +593,9 @@ public class VideoServiceImpl extends ServiceImpl<VideoMapper, Video> implements
                 fileIds.add(video.getUrl());
                 fileIds.add(video.getCover());
             }
-            Map<Long, File> fileMap = fileService.listByIds(fileIds).stream().collect(Collectors.toMap(File::getId, Function.identity()));
+            Map<Long, File> fileMap = fileService.listByIds(fileIds)
+                    .stream()
+                    .collect(Collectors.toMap(File::getId, Function.identity()));
             Map<Long, User> userMap = userService.list(userIds).stream().collect(Collectors.toMap(User::getId, Function.identity()));
             for (Video video : videos) {
                 UserVO userVO = new UserVO();

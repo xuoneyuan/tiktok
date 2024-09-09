@@ -59,12 +59,13 @@ public class FavoritesServiceImpl extends ServiceImpl<FavoritesMapper, Favorites
         List<Long> collect = favorites.stream().map(Favorites::getId).collect(Collectors.toList());
         Map<Long,Long> map = favoritesVideoService.list(new LambdaQueryWrapper<FavoritesVideo>()
                         .in(FavoritesVideo::getFavoritesId, collect))
-         .stream().collect(Collectors.groupingBy(FavoritesVideo::getFavoritesId,
+         .stream()
+                .collect(Collectors.groupingBy(FavoritesVideo::getFavoritesId,
                 Collectors.counting()));
 
         for (Favorites favorite : favorites) {
             Long count = map.get(favorite.getId());
-            favorite.setVideoCount(count==null?0:count);
+            favorite.setVideoCount(count == null ? 0 : count);
 
         }
         return favorites;
@@ -105,8 +106,9 @@ public class FavoritesServiceImpl extends ServiceImpl<FavoritesMapper, Favorites
 
     @Override
     public boolean favoritesState(Long videoId, Long userId){
-
-        if(userId==null)return false;
+        if(userId==null){
+            return false;
+        }
         return favoritesVideoService.count(new LambdaQueryWrapper<FavoritesVideo>()
                 .eq(FavoritesVideo::getVideoId,videoId)
                 .eq(FavoritesVideo::getUserId,userId))==1;

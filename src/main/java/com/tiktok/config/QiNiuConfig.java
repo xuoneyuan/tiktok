@@ -32,8 +32,8 @@ public class QiNiuConfig {
 
     public Auth buildAuth(){
         String accessKey = this.getAccessKey();
-        String sercetKey = this.getSecretKey();
-        return Auth.create(accessKey,sercetKey);
+        String secretKey = this.getSecretKey();
+        return Auth.create(accessKey,secretKey);
 
 
     }
